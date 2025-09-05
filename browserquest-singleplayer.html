@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=Edge;chrome=1">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1.0, user-scalable=no">
+    <title>BrowserQuest - Single Player</title>
+    
+    <style>
+        /* Basic CSS styles - simplified version */
+        body {
+            margin: 0;
+            padding: 0;
+            background: #000;
+            font-family: Arial, sans-serif;
+            overflow: hidden;
+        }
+        
+        #container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+        
+        #canvas {
+            position: relative;
+            width: 100%;
+            height: 100%;
+        }
+        
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+        
+        #intro {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #000;
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        #parchment {
+            background: #8B4513;
+            border: 3px solid #654321;
+            border-radius: 10px;
+            padding: 20px;
+            max-width: 400px;
+            text-align: center;
+            color: #fff;
+        }
+        
+        #nameinput {
+            width: 200px;
+            padding: 10px;
+            margin: 10px;
+            border: 2px solid #654321;
+            border-radius: 5px;
+            background: #f4e4bc;
+        }
+        
+        .play {
+            background: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 10px;
+        }
+        
+        .play:hover {
+            background: #45a049;
+        }
+        
+        .play.disabled {
+            background: #666;
+            cursor: not-allowed;
+        }
+        
+        #bar-container {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            right: 10px;
+            height: 40px;
+            background: rgba(0,0,0,0.7);
+            border-radius: 5px;
+            display: flex;
+            align-items: center;
+            padding: 0 10px;
+            color: white;
+        }
+        
+        #healthbar {
+            width: 200px;
+            height: 20px;
+            background: #333;
+            border: 2px solid #666;
+            border-radius: 10px;
+            margin-right: 20px;
+        }
+        
+        #hitpoints {
+            height: 100%;
+            background: #4CAF50;
+            border-radius: 8px;
+            transition: width 0.3s;
+        }
+        
+        #chatbox {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            right: 10px;
+            height: 30px;
+            background: rgba(0,0,0,0.7);
+            border-radius: 5px;
+            display: none;
+        }
+        
+        #chatinput {
+            width: 100%;
+            height: 100%;
+            border: none;
+            background: transparent;
+            color: white;
+            padding: 0 10px;
+            outline: none;
+        }
+        
+        .hidden {
+            display: none !important;
+        }
+    </style>
+</head>
+<body>
+    <div id="intro">
+        <div id="parchment">
+            <h1>BrowserQuest - Single Player</h1>
+            <p>Enter your character name:</p>
+            <input type="text" id="nameinput" placeholder="Character name" maxlength="15">
+            <br>
+            <button class="play" id="playbutton">Start Game</button>
+        </div>
+    </div>
+    
+    <div id="container" class="hidden">
+        <div id="canvas">
+            <canvas id="background"></canvas>
+            <canvas id="entities"></canvas>
+            <canvas id="foreground"></canvas>
+        </div>
+        
+        <div id="bar-container">
+            <div id="healthbar">
+                <div id="hitpoints"></div>
+            </div>
+            <span id="playerinfo">Health: 100/100</span>
+        </div>
+        
+        <div id="chatbox">
+            <input type="text" id="chatinput" placeholder="Type a message...">
+        </div>
+    </div>
+
+    <script>
+        // Simplified single-player BrowserQuest implementation
+        
+        // Game state
+        let gameState = {
+            player: {
+                name: '',
+                x: 25,
+                y: 25,
+                health: 100,
+                maxHealth: 100,
+                level: 1,
+                experience: 0,
+                gold: 0
+            },
+            entities: {},
+            map: null,
+            isRunning: false,
+            lastUpdate: Date.now()
+        };
+        
+        // Canvas setup
+        const canvas = document.getElementById('entities');
+        const ctx = canvas.getContext('2d');
+        const backgroundCanvas = document.getElementById('background');
+        const bgCtx = backgroundCanvas.getContext('2d');
+        const foregroundCanvas = document.getElementById('foreground');
+        const fgCtx = foregroundCanvas.getContext('2d');
+        
+        // Resize canvas
+        function resizeCanvas() {
+            const size = Math.min(window.innerWidth, window.innerHeight);
+            canvas.width = size;
+            canvas.height = size;
+            backgroundCanvas.width = size;
+            backgroundCanvas.height = size;
+            foregroundCanvas.width = size;
+            foregroundCanvas.height = size;
+        }
+        
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+        
+        // Simple map data (16x16 tiles)
+        const mapData = {
+            width: 16,
+            height: 16,
+            tiles: [
+                [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+                [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+                [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+                [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+                [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+                [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+                [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+                [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+                [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+                [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+                [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+                [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+                [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+                [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+                [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+                [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+            ]
+        };
+        
+        // Tile size
+        const TILE_SIZE = 32;
+        
+        // Render map
+        function renderMap() {
+            bgCtx.fillStyle = '#2d5016'; // Grass color
+            bgCtx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            for (let y = 0; y < mapData.height; y++) {
+                for (let x = 0; x < mapData.width; x++) {
+                    if (mapData.tiles[y][x] === 1) {
+                        bgCtx.fillStyle = '#8B4513'; // Wall color
+                        bgCtx.fillRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+                    }
+                }
+            }
+        }
+        
+        // Render player
+        function renderPlayer() {
+            ctx.fillStyle = '#4169E1'; // Blue player
+            ctx.fillRect(
+                gameState.player.x * TILE_SIZE + 4,
+                gameState.player.y * TILE_SIZE + 4,
+                TILE_SIZE - 8,
+                TILE_SIZE - 8
+            );
+        }
+        
+        // Render entities
+        function renderEntities() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            renderPlayer();
+        }
+        
+        // Game loop
+        function gameLoop() {
+            if (!gameState.isRunning) return;
+            
+            const now = Date.now();
+            const deltaTime = now - gameState.lastUpdate;
+            gameState.lastUpdate = now;
+            
+            // Update game logic here
+            
+            // Render
+            renderEntities();
+            
+            requestAnimationFrame(gameLoop);
+        }
+        
+        // Handle player movement
+        function movePlayer(dx, dy) {
+            const newX = gameState.player.x + dx;
+            const newY = gameState.player.y + dy;
+            
+            // Check bounds
+            if (newX >= 0 && newX < mapData.width && newY >= 0 && newY < mapData.height) {
+                // Check collision with walls
+                if (mapData.tiles[newY][newX] === 0) {
+                    gameState.player.x = newX;
+                    gameState.player.y = newY;
+                }
+            }
+        }
+        
+        // Keyboard controls
+        document.addEventListener('keydown', (e) => {
+            if (!gameState.isRunning) return;
+            
+            switch(e.key) {
+                case 'ArrowUp':
+                case 'w':
+                case 'W':
+                    movePlayer(0, -1);
+                    break;
+                case 'ArrowDown':
+                case 's':
+                case 'S':
+                    movePlayer(0, 1);
+                    break;
+                case 'ArrowLeft':
+                case 'a':
+                case 'A':
+                    movePlayer(-1, 0);
+                    break;
+                case 'ArrowRight':
+                case 'd':
+                case 'D':
+                    movePlayer(1, 0);
+                    break;
+                case 'Enter':
+                    document.getElementById('chatbox').style.display = 'block';
+                    document.getElementById('chatinput').focus();
+                    break;
+            }
+        });
+        
+        // Chat input
+        document.getElementById('chatinput').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                const message = e.target.value;
+                if (message.trim()) {
+                    console.log('Chat:', message);
+                    e.target.value = '';
+                }
+                document.getElementById('chatbox').style.display = 'none';
+            } else if (e.key === 'Escape') {
+                document.getElementById('chatbox').style.display = 'none';
+                e.target.value = '';
+            }
+        });
+        
+        // Start game
+        function startGame() {
+            const nameInput = document.getElementById('nameinput');
+            const name = nameInput.value.trim();
+            
+            if (!name) {
+                alert('Please enter a character name!');
+                return;
+            }
+            
+            gameState.player.name = name;
+            gameState.isRunning = true;
+            
+            // Hide intro, show game
+            document.getElementById('intro').classList.add('hidden');
+            document.getElementById('container').classList.remove('hidden');
+            
+            // Initialize game
+            renderMap();
+            gameLoop();
+            
+            // Update UI
+            updateUI();
+        }
+        
+        // Update UI
+        function updateUI() {
+            document.getElementById('playerinfo').textContent = 
+                `Health: ${gameState.player.health}/${gameState.player.maxHealth}`;
+            
+            const healthPercent = (gameState.player.health / gameState.player.maxHealth) * 100;
+            document.getElementById('hitpoints').style.width = healthPercent + '%';
+        }
+        
+        // Event listeners
+        document.getElementById('playbutton').addEventListener('click', startGame);
+        document.getElementById('nameinput').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                startGame();
+            }
+        });
+        
+        // Local storage for save data
+        function saveGame() {
+            localStorage.setItem('browserquest-save', JSON.stringify(gameState));
+        }
+        
+        function loadGame() {
+            const saveData = localStorage.getItem('browserquest-save');
+            if (saveData) {
+                const saved = JSON.parse(saveData);
+                gameState.player = { ...gameState.player, ...saved.player };
+                return true;
+            }
+            return false;
+        }
+        
+        // Auto-save every 30 seconds
+        setInterval(saveGame, 30000);
+        
+        // Load saved game on start
+        if (loadGame()) {
+            document.getElementById('nameinput').value = gameState.player.name;
+        }
+        
+        // Handle page unload
+        window.addEventListener('beforeunload', saveGame);
+        
+        console.log('BrowserQuest Single Player loaded!');
+        console.log('Controls: Arrow keys or WASD to move, Enter to chat');
+    </script>
+</body>
+</html>
